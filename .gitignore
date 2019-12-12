@@ -113,3 +113,7 @@ freeline_project_description.json
 
 # emacs
 *~
+
+#qtcreator
+CMakeLists.txt.user
+

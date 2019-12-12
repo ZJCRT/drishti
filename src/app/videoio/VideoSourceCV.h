@@ -70,12 +70,12 @@ public:
     VideoSourceCV& operator=(const VideoSourceCV&) = delete;
     VideoSourceCV& operator=(VideoSourceCV&&) = delete;
 
-    virtual Frame operator()(int i = -1) = 0;
+    virtual Frame operator()(int i = -1, bool rotate_clockwise = false) = 0;
     virtual bool good() const { return true; }
     virtual std::size_t count() const = 0;
     virtual bool isRandomAccess() const = 0;
     virtual void setOutputFormat(PixelFormat) {}
-
+    virtual std::vector<std::string> GetFilenames() const = 0;
     static std::shared_ptr<VideoSourceCV> create(const std::string& filename);
     static std::shared_ptr<VideoSourceCV> createCV(const std::string& filename, const cv::Size &size);
 };

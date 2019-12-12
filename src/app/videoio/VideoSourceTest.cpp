@@ -17,7 +17,7 @@ VideoSourceTest::VideoSourceTest(const std::string& filename)
 {
 }
 
-auto VideoSourceTest::operator()(int i) -> Frame
+auto VideoSourceTest::operator()(int i, bool rotate_clockwise) -> Frame
 {
     int type = CV_8UC4;
     switch (format)
@@ -60,6 +60,11 @@ bool VideoSourceTest::isRandomAccess() const
 void VideoSourceTest::setOutputFormat(PixelFormat value)
 {
     format = value;
+}
+
+std::vector<std::string> VideoSourceTest::GetFilenames() const
+{
+    return std::vector<std::string>();
 }
 
 DRISHTI_VIDEOIO_NAMESPACE_END

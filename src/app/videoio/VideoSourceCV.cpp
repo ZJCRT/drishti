@@ -67,10 +67,13 @@ public:
     VideoSourceOpenCV& operator=(const VideoSourceOpenCV&) = delete;
     VideoSourceOpenCV& operator=(VideoSourceOpenCV&&) = delete;
 
-    Frame operator()(int i) override
+    Frame operator()(int i, bool rotate_clockwise = false) override
     {
         cv::Mat frame;
         video >> frame;
+        if (rotate_clockwise)
+            cv::rotate(frame, frame, cv::ROTATE_90_CLOCKWISE);
+
         return { frame, static_cast<std::size_t>(i) };
     }
     std::size_t count() const override
@@ -81,10 +84,17 @@ public:
     {
         return false;
     }
+    std::vector<std::string> GetFilenames() const override;
+
+
 protected:
     cv::VideoCapture video;
 };
 
+std::vector<std::string> VideoSourceOpenCV::GetFilenames() const
+{
+    return std::vector<std::string>();
+}
 
 std::shared_ptr<VideoSourceCV> VideoSourceCV::createCV(const std::string& filename, const cv::Size &size)
 {

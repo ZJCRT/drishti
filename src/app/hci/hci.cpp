@@ -37,6 +37,10 @@
 
 #include <spdlog/fmt/ostr.h>
 
+
+#include "json.hpp"
+using json = nlohmann::json;
+
 using string_hash::operator"" _hash;
 
 // clang-format off
@@ -64,11 +68,11 @@ static ogles_gpgpu::SwizzleProc::SwizzleKind getSwizzleKind(const std::string &s
 // Simple FaceMonitor class to report face detection results over time.
 struct FaceMonitorLogger : public drishti::hci::FaceMonitor
 {
-    FaceMonitorLogger(std::shared_ptr<spdlog::logger> &logger, int history)
+    FaceMonitorLogger(std::shared_ptr<spdlog::logger> &logger, int history,
+                      std::vector<std::string> filenames)
         : history(history)
         , m_logger(logger)
-    {
-    }
+        , filenames(filenames) {}
     
     /**
      * A user defined virtual method callback that should report the number
@@ -78,11 +82,27 @@ struct FaceMonitorLogger : public drishti::hci::FaceMonitor
      * @param timestmap the acquisition timestamp for the frame
      * @return a frame request for the last n frames with requested image formats
      */
-    Request request(const Faces& faces, const TimePoint& timeStamp, std::uint32_t texture) override
+    Request request(const Faces& faces,
+                    const TimePoint& timeStamp,
+                    std::uint32_t texture) override
     {
         cv::Point3f xyz = faces.size() ? (*faces.front().eyesCenter) : cv::Point3f();
         m_logger->info("SimpleFaceMonitor: Found {} faces {}", faces.size(), xyz);
-        
+        if (faces.size() > 0) {
+
+            cv::Point2f left_eye = faces.front().eyeFullL->irisCenter;
+            cv::Point2f right_eye = faces.front().eyeFullR->irisCenter;
+            json_object["images"][count]["left_eye"] = {left_eye.x, left_eye.y};
+            json_object["images"][count]["right_eye"] = {right_eye.x, right_eye.y};
+            json_object["images"][count]["direction"] = {xyz.x, xyz.y, xyz.z};
+            json_object["images"][count]["filename"] = filenames[count];
+        }
+        else {
+            json_object["images"][count]["left_eye"] = {-1.0, -1.0};
+            json_object["images"][count]["right_eye"] = {-1.0, -1.0};
+            json_object["images"][count]["direction"] = {-1.0, -1.0, -1.0};
+            json_object["images"][count]["filename"] = filenames[count];
+        }
         // clang-format off
         return
         {
@@ -123,6 +143,8 @@ struct FaceMonitorLogger : public drishti::hci::FaceMonitor
     std::size_t count = 0;
     int history;
     std::shared_ptr<spdlog::logger> m_logger;
+    std::vector<std::string> filenames;
+    json json_object;
 };
 
 // Add a simple timer to report frame rate.  For any offline VideoSource type
@@ -185,7 +207,7 @@ int gauze_main(int argc, char** argv)
     bool doCvVideoCapture = false;
     bool doVersion = false;    
     int loops = 0;
-    
+    bool doRotateClockwise90 = false;
     std::string sInput, sOutput, sSwizzle = "rgba", sDimensions;
 
     float resolution = 1.f;
@@ -217,7 +239,10 @@ int gauze_main(int argc, char** argv)
         ("debug", "Provide debugging annotations", cxxopts::value<bool>(doDebug))
 #endif
         ("l,loops", "Loop the input video", cxxopts::value<int>(loops))
-    
+
+        ("rotright", "Rotate image 90 degree clockwise",
+                cxxopts::value<bool>(doRotateClockwise90)->default_value("false"))
+
         // Generate a quicktime movie:
         ("m,movie", "Output quicktime movie", cxxopts::value<bool>(doMovie))
 
@@ -264,7 +289,8 @@ int gauze_main(int argc, char** argv)
     // ############################################
     // ### Command line argument error checking ###
     // ############################################
-
+    doWindow = true;
+    doCpu = true;
     // ### Directory
     if (sOutput.empty())
     {
@@ -339,7 +365,9 @@ int gauze_main(int argc, char** argv)
     // was called for the first time off the main thread.
 
     // NOTE: We can create the OpenGL context prior to AVFoundation use as a workaround
-    auto opengl = aglet::GLContext::create(aglet::GLContext::kAuto, doWindow ? "hci" : "", 640, 480);
+    auto opengl = aglet::GLContext::create(aglet::GLContext::kAuto);
+    //auto opengl = aglet::GLContext::create(aglet::GLContext::kAuto,
+    //                                       doWindow ? "hci" : "", 640, 480);
 
     // Allocate a video source
     std::shared_ptr<drishti::videoio::VideoSourceCV> video;
@@ -384,17 +412,17 @@ int gauze_main(int argc, char** argv)
     // Create configuration:
     settings.logger = drishti::core::Logger::create("test-drishti-hci");
     settings.outputOrientation = 0;
-    settings.frameDelay = 2;
+    settings.frameDelay = 1;
     settings.doLandmarks = true;
     settings.doFlow = false;
     settings.doBlobs = false;
     settings.threads = std::make_shared<tp::ThreadPool<>>();
-    settings.outputOrientation = 0;
     settings.faceFinderInterval = 0.f;
-    settings.renderFaces = true;          // *** rendering ***
-    settings.renderPupils = true;         // *** rendering ***
-    settings.renderCorners = false;       // *** rendering ***
-    settings.renderEyesWidthRatio = 0.25f * opengl->getGeometry().sx; // *** rendering ***
+    //settings.renderFaces = true;          // *** rendering ***
+    //settings.renderPupils = true;         // *** rendering ***
+    //settings.renderCorners = false;       // *** rendering ***
+    //settings.renderEyesWidthRatio = 0.25f * opengl->getGeometry().sx; // *** rendering ***
+
     settings.doSingleFace = true;
     settings.doOptimizedPipeline = !doCpu;
     settings.ignoreLatestFramesInMonitor = true;
@@ -445,11 +473,18 @@ int gauze_main(int argc, char** argv)
     detector->setShowDetectionScales(doDebug); // *** rendering ***
     detector->setDoCpuAcf(doCpu);
     
+
+    //// create output file to write eye detections to
+    std::ofstream file_out;
+    //std::cout << "sOutput<<" << sOutput << std::endl;
+    file_out.open(sOutput + "/eye_detections.json");
+
     // Instantiate and register a samle FaceMonitor class to log tracking results
     // over time.  Here we setup a sample callback that will request just the
     // last frame N=1 at each step, but we can set this up to request a buffer
     // of frames with something like N=3.
-    FaceMonitorLogger faceMonitor(logger, 1);
+    FaceMonitorLogger faceMonitor(logger, 1, video->GetFilenames());
+    faceMonitor.json_object["version"] = 0.1;
     detector->registerFaceMonitorCallback(&faceMonitor);
     
     // Allocate an input video source for feeding texture or image buffers
@@ -476,15 +511,15 @@ int gauze_main(int argc, char** argv)
         }
     }
 
-    // Instantiate an ogles_gpgpu display class that will draw to the
-    // default texture (0) which will be managed by aglet (typically glfw)
-    std::shared_ptr<ogles_gpgpu::Disp> display;
-    if (doWindow && opengl->hasDisplay())
-    {
-        display = std::make_shared<ogles_gpgpu::Disp>();
-        display->init(frame.image.cols, frame.image.rows, TEXTURE_FORMAT);
-        display->setOutputRenderOrientation(ogles_gpgpu::RenderOrientationFlipped);
-    }
+//    // Instantiate an ogles_gpgpu display class that will draw to the
+//    // default texture (0) which will be managed by aglet (typically glfw)
+//    std::shared_ptr<ogles_gpgpu::Disp> display;
+//    if (doWindow && opengl->hasDisplay())
+//    {
+//        display = std::make_shared<ogles_gpgpu::Disp>();
+//        display->init(frame.image.cols, frame.image.rows, TEXTURE_FORMAT);
+//        display->setOutputRenderOrientation(ogles_gpgpu::RenderOrientationFlipped);
+//    }
 
     SimpleTimer timer;
     
@@ -548,15 +583,15 @@ int gauze_main(int argc, char** argv)
         auto texture0 = swizzle.getOutputTexId();
         auto texture1 = (*detector)({ { frame.cols(), frame.rows() }, nullptr, false, texture0, TEXTURE_FORMAT });
 
-        // Convert to texture as one of GL_BGRA or GL_RGBA
-        if (display)
-        {
-            auto& geometry = opengl->getGeometry();
-            display->setOffset(geometry.tx, geometry.ty);
-            display->setDisplayResolution(geometry.sx * resolution, geometry.sy * resolution);
-            display->useTexture(texture1);
-            display->render(0);
-        }
+//        // Convert to texture as one of GL_BGRA or GL_RGBA
+//        if (display)
+//        {
+//            auto& geometry = opengl->getGeometry();
+//            display->setOffset(geometry.tx, geometry.ty);
+//            display->setDisplayResolution(geometry.sx * resolution, geometry.sy * resolution);
+//            display->useTexture(texture1);
+//            display->render(0);
+//        }
 
         if (sink && sink->good())
         {
@@ -580,6 +615,9 @@ int gauze_main(int argc, char** argv)
         sink->end([&] { s.signal(); });
         s.wait();
     }
+    file_out << faceMonitor.json_object.dump(2);
+    file_out.close();
+
     return 0;
 }
 

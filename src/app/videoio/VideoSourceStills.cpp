@@ -46,13 +46,20 @@ public:
         return m_filenames.size();
     }
 
-    VideoSourceCV::Frame operator()(int i = -1)
+    std::vector<std::string> GetFilenames() const;
+
+    VideoSourceCV::Frame operator()(int i = -1, bool rotate_clockwise = false)
     {
-    if (!((0 <= i) && (i < m_filenames.size())))
-    {
-      return {};
-    }
-        return VideoSourceCV::Frame(cv::imread(m_filenames[i]), i, m_filenames[i]);
+        if (!((0 <= i) && (i < m_filenames.size())))
+        {
+          return {};
+        }
+        cv::Mat frame = cv::imread(m_filenames[i]);
+        std::cout<<"m_filenames[i]: "<<m_filenames[i].size()<<std::endl;
+        std::cout<<"current image: "<<m_filenames[i]<<std::endl<<" width, heidht "<<frame.cols<<","<<frame.rows<<std::endl;
+        if (rotate_clockwise)
+            cv::rotate(frame, frame, cv::ROTATE_90_CLOCKWISE);
+        return VideoSourceCV::Frame(frame, i, m_filenames[i]);
     }
 
     std::string m_filename;
@@ -77,9 +84,20 @@ std::size_t VideoSourceStills::count() const
     return m_impl->count();
 }
 
-VideoSourceCV::Frame VideoSourceStills::operator()(int i)
+std::vector<std::string> VideoSourceStills::GetFilenames() const
 {
-    return (*m_impl)(i);
+    return (*m_impl).GetFilenames();
 }
+
+VideoSourceCV::Frame VideoSourceStills::operator()(int i, bool rotate_clockwise)
+{
+    return (*m_impl)(i, rotate_clockwise);
+}
+
+std::vector<std::string> VideoSourceStills::Impl::GetFilenames() const
+{
+    return m_filenames;
+}
+
 
 DRISHTI_VIDEOIO_NAMESPACE_END

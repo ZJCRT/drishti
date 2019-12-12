@@ -34,10 +34,11 @@ public:
     VideoSourceStills& operator=(const VideoSourceStills&) = delete;
     VideoSourceStills& operator=(VideoSourceStills&&) = delete;
 
-    Frame operator()(int i = -1) override;
+    Frame operator()(int i = -1, bool rotate_clockwise = false) override;
     std::size_t count() const override;
     bool isRandomAccess() const override { return true; }
 
+    std::vector<std::string> GetFilenames() const override;
 protected:
     std::unique_ptr<Impl> m_impl;
 };
