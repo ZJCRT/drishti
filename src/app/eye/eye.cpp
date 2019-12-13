@@ -354,7 +354,8 @@ int gauze_main(int argc, char** argv)
             drishti::eye::EyeModel eye;
             drishti::eye::fitEyeModel(*segmenter, image, eye, isRight, hasPrewarp ? &prewarp : nullptr);
             eye.refine();
-
+            cv::Point2f pupil_center = eye.getPupilCenter();
+            std::cout<<"pupil_center: "<<pupil_center<<std::endl;
             if(!sOutput.empty())
             {
                 // Construct valid filename with no extension:
